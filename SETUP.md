@@ -330,14 +330,11 @@ python -m jobhunt run --send
 This is the part that turns it from a script into an agent. GitHub will run it
 for you on a schedule, for free, with your laptop closed.
 
-> **Make your fork private first** if you care about this. The workflow commits
-> `seen.json` back to the repo, which lists every job you've been shown and
-> marked as applied. On a public fork, that's public. Settings → General →
-> Danger Zone → Change visibility. Actions minutes are free either way.
-
 1. Push your `config.yaml` and `companies.yaml` changes to your fork.
-   **`.env` and `profile.json` are gitignored and will not be pushed** — that's
-   deliberate, they hold secrets and personal data.
+   **`.env`, `profile.json`, your resume and `seen.json` are all gitignored and
+   will not be pushed** — that's deliberate. Nothing personal enters git, so a
+   public fork is fine. Your key and profile go in as secrets in the next step,
+   and `seen.json` is carried between runs by GitHub's cache.
 
 2. In your fork: **Settings → Secrets and variables → Actions**.
 
@@ -384,7 +381,10 @@ python -m jobhunt stats
 `out/tracker.csv` opens in Excel or Google Sheets.
 
 `seen.json` means you're never shown the same job twice. Don't delete it unless
-you want to start over.
+you want to start over. It's gitignored, so it stays on your machine — and in
+GitHub Actions it's kept in the cache between runs. If you pause the schedule
+for more than a week the cache expires and you'll be re-shown some older jobs
+once; that's the only downside, and it's harmless.
 
 ---
 

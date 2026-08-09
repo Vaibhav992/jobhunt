@@ -13,13 +13,13 @@ on:
         type: boolean
         default: false
 
-# seen.json is committed back, so never let two runs race.
+# Two runs sharing one dedupe store would race. Queue them instead.
 concurrency:
   group: jobhunt-daily
   cancel-in-progress: false
 
 permissions:
-  contents: write        # required to push seen.json back
+  contents: read         # nothing is pushed back; the store lives in the cache
 
 jobs:
   digest:
@@ -28,6 +28,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Restore the dedupe store
+        # seen.json is what stops you being emailed the same job twice, so it
+        # has to survive between runs. It is NOT committed: it is personal, and
+        # a seen.json in the repo would mark every job as seen for anyone who
+        # clones it. Cache entries are immutable, so the key is unique per run
+        # and restore-keys pulls the most recent one forward.
+        uses: actions/cache@v4
+        with:
+          path: seen.json
+          key: jobhunt-seen-${{ github.run_id }}
+          restore-keys: |
+            jobhunt-seen-
 
       - uses: actions/setup-python@v5
         with:
@@ -83,20 +96,11 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      - name: Commit seen.json
-        # Dedupe only works if the store survives between runs. Committing it
-        # back is the simplest durable option and gives you a readable history
-        # of what the agent saw. actions/cache is the alternative, but caches
-        # are evicted after 7 days of no reads and you lose your tracker.
+      - name: Report the dedupe store
+        if: always()
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add seen.json
-          if git diff --cached --quiet; then
-            echo "no new postings — nothing to commit"
+          if [ -f seen.json ]; then
+            python -c "import json;print(f'tracking {len(json.load(open(\"seen.json\")))} postings')"
           else
-            git commit -m "chore: update seen.json [skip ci]"
-            # Another run may have pushed while we were working.
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
+            echo "no seen.json — first run, or the cache expired"
           fi

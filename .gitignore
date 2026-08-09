@@ -11,11 +11,11 @@ out/
 *.html
 !jobhunt/templates/*.html
 
-# NOTE: seen.json is deliberately NOT ignored.
-# The GitHub Actions workflow commits it back so dedupe survives across runs.
-# If you would rather not have it in git, uncomment the next line and switch
-# the workflow to actions/cache instead.
-# seen.json
+# Your dedupe index and application tracker. Personal, and it must never ship
+# with the repo: a cloned seen.json marks every job as already-seen, so a new
+# user's first run finds nothing. GitHub Actions persists it via actions/cache
+# instead of committing it.
+seen.json
 
 # python
 __pycache__/

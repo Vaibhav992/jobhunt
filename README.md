@@ -156,7 +156,8 @@ with a `complete()` method, plus an entry in the `PROVIDERS` dict.
 ## Tracking
 
 `seen.json` is both the dedupe index and the application tracker — a job you've
-already been shown is never shown again.
+already been shown is never shown again. It's gitignored: it's yours, and
+shipping one would break the first run for anyone who cloned the repo.
 
 ```bash
 python -m jobhunt applied "greenhouse:stripe:5501001"   # id is in the digest
@@ -170,7 +171,9 @@ python -m jobhunt stats                                 # + CSV export
 ## Scheduling
 
 [`.github/workflows/daily.yml`](.github/workflows/daily.yml) runs it at 06:00 IST
-on weekdays and commits `seen.json` back so dedupe survives across runs.
+on weekdays. `seen.json` is carried between runs with `actions/cache`, not
+committed — it's personal, and a `seen.json` in the repo would mark every job as
+already-seen for anyone who cloned it. Nothing personal ever enters git.
 
 Repository **secrets** to set (Settings → Secrets and variables → Actions):
 
