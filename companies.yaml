@@ -30,9 +30,6 @@ companies:
   - {ats: greenhouse, slug: dropbox,     name: Dropbox}
   - {ats: greenhouse, slug: coinbase,    name: Coinbase}
   - {ats: greenhouse, slug: reddit,      name: Reddit}
-  - {ats: greenhouse, slug: doordash,    name: DoorDash}
-
-  - {ats: lever,      slug: netlify,     name: Netlify}
   - {ats: lever,      slug: voleon,      name: Voleon}
 
   - {ats: ashby,      slug: openai,      name: OpenAI}
