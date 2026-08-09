@@ -1,0 +1,34 @@
+# secrets
+.env
+
+# your actual resume and the profile derived from it
+resume.*
+my_resume.pdf
+profile.json
+!profile.example.json
+# generated output
+out/
+*.html
+!jobhunt/templates/*.html
+
+# NOTE: seen.json is deliberately NOT ignored.
+# The GitHub Actions workflow commits it back so dedupe survives across runs.
+# If you would rather not have it in git, uncomment the next line and switch
+# the workflow to actions/cache instead.
+# seen.json
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
