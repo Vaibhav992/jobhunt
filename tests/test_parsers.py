@@ -17,7 +17,20 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobhunt import mock
-from jobhunt.fetch import parse_ashby, parse_greenhouse, parse_lever, strip_html
+from jobhunt.fetch import (
+    Job,
+    _sr_location,
+    parse_ashby,
+    parse_greenhouse,
+    parse_lever,
+    parse_arbeitnow,
+    parse_recruitee,
+    parse_remotive,
+    parse_smartrecruiters,
+    parse_smartrecruiters_detail,
+    parse_workable,
+    strip_html,
+)
 from jobhunt.mock import fetch_all_mock
 from jobhunt.prefilter import prefilter
 
@@ -92,11 +105,152 @@ def test_ashby_reads_compensation_and_html_fallback():
     assert "Causal inference" in ds.description   # descriptionHtml fallback
 
 
+def test_remotive_filters_categories_and_maps_india_eligible_remote_job():
+    body = {"jobs": [
+        {
+            "id": 101,
+            "title": "Backend Engineer",
+            "company_name": "Remote Co",
+            "category": "Software Development",
+            "candidate_required_location": "Asia, Worldwide",
+            "url": "https://remotive.com/jobs/101",
+            "description": "<p>Build Java APIs</p>",
+            "publication_date": "2026-08-09T12:00:00",
+            "salary": "$30k-$50k",
+        },
+        {
+            "id": 102,
+            "title": "Account Executive",
+            "company_name": "Remote Co",
+            "category": "Sales",
+            "candidate_required_location": "Worldwide",
+        },
+    ]}
+
+    jobs = parse_remotive("software-development|devops", "Remotive", body)
+
+    assert len(jobs) == 1
+    assert jobs[0].job_id == "remotive:software-development|devops:101"
+    assert jobs[0].company == "Remote Co"
+    assert jobs[0].location == "Remote — Asia, Worldwide"
+    assert jobs[0].description == "Build Java APIs"
+
+
+def test_remotive_does_not_mark_usa_only_role_as_globally_remote():
+    body = {"jobs": [{
+        "id": 103,
+        "title": "Software Engineer",
+        "company_name": "US Co",
+        "category": "Software Development",
+        "candidate_required_location": "USA only",
+    }]}
+
+    job = parse_remotive("software-development", "Remotive", body)[0]
+
+    assert job.location == "USA only"
+
+
+# ------------------------------------------------------ smartrecruiters ---
+
+def test_smartrecruiters_list_defers_the_description_and_keeps_a_detail_url():
+    """The list endpoint has no JD. The parser must set detail_url (so hydrate
+    can fetch it later) and leave description empty — not invent one."""
+    jobs = parse_smartrecruiters("globaltech", "GlobalTech",
+                                 mock.SMARTRECRUITERS["globaltech"])
+    j = next(j for j in jobs if j.title == "Software Engineer, Cloud Platform")
+    assert j.job_id == "smartrecruiters:globaltech:743999000000001"
+    assert j.ats == "smartrecruiters"
+    assert j.company == "GlobalTech"
+    assert j.location == "Bengaluru, Karnataka, India"   # city/region/country join
+    assert j.description == ""                            # not hydrated yet
+    assert j.detail_url.endswith("/globaltech/postings/743999000000001")
+
+
+def test_smartrecruiters_location_variants():
+    assert _sr_location({"fullLocation": "Berlin, Germany"}) == "Berlin, Germany"
+    assert _sr_location({"city": "Pune", "country": "India"}) == "Pune, India"
+    assert _sr_location({"fullLocation": "Bengaluru", "remote": True}) == "Remote — Bengaluru"
+    assert _sr_location({"city": "Chennai", "hybrid": True}) == "Hybrid — Chennai"
+    assert _sr_location({}) == ""
+    assert _sr_location(None) == ""
+
+
+def test_smartrecruiters_detail_concatenates_sections_and_strips_html():
+    jd = parse_smartrecruiters_detail(mock.SMARTRECRUITERS_DETAIL["743999000000001"])
+    assert "control plane" in jd            # jobDescription
+    assert "1-2 years of backend" in jd     # qualifications
+    assert "Bengaluru office" in jd         # additionalInformation
+    assert "<" not in jd                    # html stripped
+    # order preserved: description, then qualifications, then additional
+    assert jd.index("control plane") < jd.index("1-2 years") < jd.index("Bengaluru office")
+
+
+def test_smartrecruiters_detail_tolerates_missing_sections():
+    assert parse_smartrecruiters_detail({}) == ""
+    assert parse_smartrecruiters_detail({"jobAd": {"sections": {}}}) == ""
+
+
+def test_workable_maps_remote_india_role_and_strips_html():
+    body = {"name": "Acme", "jobs": [{
+        "shortcode": "AB12",
+        "title": "Backend Engineer",
+        "city": "Bengaluru",
+        "country": "India",
+        "telecommuting": True,
+        "url": "https://apply.workable.com/acme/j/AB12/",
+        "published_on": "2026-08-20",
+        "description": "<p>Build Java APIs</p>",
+    }]}
+    jobs = parse_workable("acme", "Fallback", body)
+    assert len(jobs) == 1
+    assert jobs[0].job_id == "workable:acme:AB12"
+    assert jobs[0].company == "Acme"
+    assert jobs[0].location == "Remote — Bengaluru, India"
+    assert jobs[0].description == "Build Java APIs"
+
+
+def test_recruitee_marks_remote_and_uses_careers_url():
+    body = {"offers": [{
+        "id": 9,
+        "title": "Software Engineer",
+        "company_name": "Recruitee Co",
+        "location": "Pune",
+        "remote": True,
+        "careers_url": "https://example.recruitee.com/o/9",
+        "description": "<p>Spring Boot</p>",
+        "published_at": "2026-08-21",
+    }]}
+    job = parse_recruitee("example", "Fallback", body)[0]
+    assert job.job_id == "recruitee:example:9"
+    assert job.location == "Remote — Pune"
+    assert job.url.endswith("/o/9")
+    assert job.description == "Spring Boot"
+
+
+def test_arbeitnow_slug_keeps_remote_software_roles_only():
+    body = {"data": [
+        {"slug": "a", "title": "Backend Engineer", "company_name": "A",
+         "location": "Berlin", "remote": True, "tags": ["software"],
+         "url": "https://www.arbeitnow.com/a", "description": "Go",
+         "created_at": "2026-08-20"},
+        {"slug": "b", "title": "Nurse", "company_name": "B",
+         "location": "Berlin", "remote": True, "tags": ["healthcare"],
+         "url": "https://www.arbeitnow.com/b"},
+        {"slug": "c", "title": "Backend Engineer", "company_name": "C",
+         "location": "Berlin", "remote": False, "tags": ["software"],
+         "url": "https://www.arbeitnow.com/c"},
+    ]}
+    jobs = parse_arbeitnow("remote|software", "Arbeitnow", body)
+    assert [j.job_id for j in jobs] == ["arbeitnow:remote|software:a"]
+    assert jobs[0].location.startswith("Remote")
+
+
 def test_job_ids_are_globally_unique_and_namespaced():
     jobs = fetch_all_mock()
     ids = [j.job_id for j in jobs]
     assert len(ids) == len(set(ids))
-    assert all(re.match(r"^(greenhouse|lever|ashby):[^:]+:.+$", i) for i in ids)
+    assert all(re.match(r"^(greenhouse|lever|ashby|smartrecruiters):[^:]+:.+$", i)
+               for i in ids)
 
 
 def test_parsers_take_decoded_json_not_a_response():
@@ -145,14 +299,14 @@ def test_junk_titles_are_rejected(title):
     assert excluded or not included, f"{title!r} would have survived"
 
 
-def test_full_mock_funnel_keeps_only_the_five_real_matches():
+def test_full_mock_funnel_keeps_only_matching_entry_level_roles():
     kept = prefilter(fetch_all_mock(), FILTERS)
     titles = sorted(j.title for j in kept)
     assert titles == [
-        "Backend Engineer (Go)",
         "Site Reliability Engineer",
         "Software Development Engineer, Core Infra",
         "Software Engineer II, Distributed Systems",
+        "Software Engineer, Cloud Platform",      # SmartRecruiters, JD not yet hydrated
         "Software Engineer, Networking",
     ]
 
@@ -171,7 +325,6 @@ def test_wrong_city_dropped_but_remote_kept():
 def test_allow_remote_is_what_lets_an_out_of_region_remote_role_through():
     """"Remote (India)" already matches the `india` location, so it is the
     wrong fixture for this. Use a remote role that names no allowed city."""
-    from jobhunt.fetch import Job
     remote = Job(job_id="lever:x:1", ats="lever", company="X",
                  title="Backend Engineer", location="Remote - Global",
                  url="https://example.com", description="Go")
@@ -181,6 +334,61 @@ def test_allow_remote_is_what_lets_an_out_of_region_remote_role_through():
 
     assert len(kept_on) == 1
     assert kept_off == []
+
+
+def test_india_city_without_country_name_passes_location_gate():
+    job = Job(job_id="x:1", ats="x", company="X", title="Software Engineer",
+              location="Pune, Maharashtra", url="", description="")
+
+    assert prefilter([job], FILTERS) == [job]
+
+
+def test_indiana_does_not_match_india_location_filter():
+    job = Job(job_id="x:1", ats="x", company="X", title="Software Engineer",
+              location="Indiana, United States", url="", description="")
+
+    assert prefilter([job], FILTERS) == []
+
+
+def test_remotive_usa_only_role_does_not_pass_as_remote():
+    body = {"jobs": [{
+        "id": 104,
+        "title": "Software Engineer",
+        "company_name": "US Co",
+        "category": "Software Development",
+        "candidate_required_location": "USA only",
+        "description": "Requires 1 year of experience.",
+    }]}
+    job = parse_remotive("software-development", "Remotive", body)[0]
+
+    assert prefilter([job], FILTERS) == []
+
+
+@pytest.mark.parametrize("requirement", [
+    "Candidates should have 3+ years of backend experience.",
+    "Requires 3 years of professional software development experience.",
+    "You have 2-5 years of relevant experience.",
+    "Experience of at least 4 years building APIs.",
+    "Minimum three years of relevant engineering experience.",
+    "Requires 4+ yrs of backend experience.",
+])
+def test_experience_gate_rejects_requirements_above_two_years(requirement):
+    job = Job(job_id="x:1", ats="x", company="X", title="Software Engineer",
+              location="India", url="", description=requirement)
+
+    assert prefilter([job], {"max_experience_years": 2}) == []
+
+
+@pytest.mark.parametrize("requirement", [
+    "Open to candidates with 0-2 years of experience.",
+    "Requires 2 years of relevant backend experience.",
+    "Strong Java and Spring Boot skills.",
+])
+def test_experience_gate_keeps_zero_to_two_year_roles(requirement):
+    job = Job(job_id="x:1", ats="x", company="X", title="Software Engineer",
+              location="India", url="", description=requirement)
+
+    assert prefilter([job], {"max_experience_years": 2}) == [job]
 
 
 def test_empty_filters_keep_everything():

@@ -31,6 +31,7 @@ the agent just does the finding, matching and drafting.
     greenhouse  GET https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true
     lever       GET https://api.lever.co/v0/postings/{slug}?mode=json
     ashby       GET https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true
+    remotive    GET https://remotive.com/api/remote-jobs
 
 Field mapping, since each is shaped differently:
 
@@ -46,8 +47,11 @@ Field mapping, since each is shaped differently:
   `descriptionPlain` (fall back to `descriptionHtml`), `publishedAt`,
   `compensation.compensationTierSummary`. **Skip anything with
   `isListed: false`** — those are drafts.
+- **Remotive** → `jobs[]`, with `id`, `title`, `company_name`,
+  `candidate_required_location`, `url`, `description`, `publication_date`,
+  and `salary`. Keep direct Remotive links for source attribution.
 
-Normalize all three into one dataclass with a globally unique
+Normalize all sources into one dataclass with a globally unique
 `job_id = "{ats}:{slug}:{id}"` for dedupe.
 
 ## Architecture
@@ -57,7 +61,7 @@ Keep HTTP separate from parsing — each ATS gets a pure
 JSON. That's what makes offline testing possible.
 
     jobhunt/
-      fetch.py       Job dataclass, strip_html, 3 parsers, fetch_all
+      fetch.py       Job dataclass, strip_html, source parsers, fetch_all
       prefilter.py   title include/exclude regex, location, max_age_days
       llm.py         provider-agnostic screen() + draft() + build_profile()
       digest.py      HTML email (inline CSS only — Gmail strips <style>)
@@ -119,7 +123,7 @@ Two gotchas I already hit — don't repeat them:
 ## Config
 
 `config.yaml` holds `include_titles` / `exclude_titles` (regex lists),
-`locations`, `allow_remote`, `max_age_days`, `score_threshold`,
+`locations`, `allow_remote`, `max_age_days`, `max_experience_years`, `score_threshold`,
 `max_per_digest`, `screen_batch_size`, and all file paths.
 
 ## Deliverables

@@ -1,0 +1,55 @@
+# Render Blueprint. Push this repo, then in Render: New + -> Blueprint, point it
+# at the repo, and it provisions the service below. Fill the secret values
+# (sync:false) in the dashboard — they are never committed.
+#
+# Scheduling is external and free: Render's own Cron Jobs are a paid add-on, so
+# instead create 4 jobs at https://cron-job.org that POST to
+#     https://<your-service>.onrender.com/run
+# with header  X-Run-Token: <the RUN_TOKEN you set below>
+# spaced across the day (e.g. 07:05, 12:35, 17:05, 21:35 IST).
+#
+# The free plan spins the service down when idle; the first cron ping of the
+# day wakes it, then the run proceeds. The seen-store lives in Upstash, not on
+# disk, so dedupe survives the spin-down.
+
+services:
+  - type: web
+    name: jobhunt
+    runtime: python
+    plan: free
+    region: singapore            # closest Render region to India
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 1 -k gthread --threads 4 -t 120 -b 0.0.0.0:$PORT jobhunt.server:app
+    healthCheckPath: /health
+    envVars:
+      # --- LLM (DeepSeek for the cheap screen pass) ---
+      - key: LLM_PROVIDER
+        value: deepseek
+      - key: SCREEN_PROVIDER
+        value: deepseek
+      - key: SCREEN_MODEL
+        value: deepseek-chat
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      # --- seen-store: Upstash Redis (must persist across spin-down) ---
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      # --- who can trigger /run ---
+      - key: RUN_TOKEN
+        sync: false
+      # --- profile (gitignored; paste the contents of your local profile.json) ---
+      - key: PROFILE_JSON
+        sync: false
+      # --- email (already working for you) ---
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_TO
+        sync: false

@@ -214,6 +214,20 @@ class GroqProvider(OpenAICompatProvider):
     name = "groq"
 
 
+class DeepSeekProvider(OpenAICompatProvider):
+    """DeepSeek's /chat/completions. Cheap, and its prompt-cache makes a
+    repeated profile prefix nearly free — which is exactly how screening runs.
+
+    Reads its own key (DEEPSEEK_API_KEY) and defaults to the DeepSeek base URL,
+    so it does not collide with a Groq key set for a different stage.
+    """
+
+    name = "deepseek"
+    required_env = "DEEPSEEK_API_KEY"
+    default_base = "https://api.deepseek.com"
+    key_env = "DEEPSEEK_API_KEY"
+
+
 class OllamaProvider(Provider):
     """Fully local. No key, no cost, no rate limit - just a slower model."""
 
@@ -249,6 +263,7 @@ PROVIDERS = {
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
     "groq": GroqProvider,
+    "deepseek": DeepSeekProvider,
     "openai-compatible": OpenAICompatProvider,
     "ollama": OllamaProvider,
 }
@@ -259,6 +274,7 @@ DEFAULT_MODELS = {
     "anthropic": {"screen": "claude-haiku-4-5-20251001", "draft": "claude-sonnet-5"},
     "gemini": {"screen": "gemini-2.0-flash", "draft": "gemini-2.0-flash"},
     "groq": {"screen": "llama-3.3-70b-versatile", "draft": "llama-3.3-70b-versatile"},
+    "deepseek": {"screen": "deepseek-chat", "draft": "deepseek-chat"},
     "openai-compatible": {"screen": "gpt-4o-mini", "draft": "gpt-4o"},
     "ollama": {"screen": "llama3.1", "draft": "llama3.1"},
 }

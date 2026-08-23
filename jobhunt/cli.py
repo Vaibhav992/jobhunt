@@ -15,11 +15,11 @@ import yaml
 
 from . import digest as digest_mod
 from . import llm, mailer
-from .fetch import fetch_all
+from .fetch import fetch_all, fetch_board, hydrate_descriptions
 from .mock import fetch_all_mock
 from .prefilter import prefilter
 from .providers import LLMError, resolve
-from .store import Store
+from .store import open_store
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -40,7 +40,28 @@ def _cfg(path: str | Path) -> dict:
     p = Path(path)
     if not p.exists():
         raise SystemExit(f"config not found: {p}  (run from the project root)")
-    return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise SystemExit(f"config must be a YAML mapping: {p}")
+    return data
+
+
+def _load_companies(path: str | Path) -> list[dict]:
+    """Load the documented top-level list, while accepting a wrapped list."""
+    p = Path(path)
+    if not p.exists():
+        raise SystemExit(f"companies file not found: {p}")
+    data = yaml.safe_load(p.read_text(encoding="utf-8")) or []
+    if isinstance(data, dict):
+        data = data.get("companies") or []
+    if not isinstance(data, list):
+        raise SystemExit(f"companies file must contain a YAML list: {p}")
+    for index, company in enumerate(data, start=1):
+        if not isinstance(company, dict) or not company.get("ats") or not company.get("slug"):
+            raise SystemExit(
+                f"invalid company entry #{index} in {p}: 'ats' and 'slug' are required"
+            )
+    return data
 
 
 def _load_profile(cfg: dict, allow_sample: bool) -> dict | None:
@@ -91,7 +112,7 @@ def cmd_run(args) -> int:
     profile = _load_profile(cfg, allow_sample=args.mock)
     if profile is None:
         return 1
-    store = Store(cfg.get("seen_file", "seen.json"))
+    store = open_store(cfg)
     filters = cfg.get("filters", {}) or {}
 
     # ---- 1. fetch
@@ -99,7 +120,7 @@ def cmd_run(args) -> int:
     if args.mock:
         jobs = fetch_all_mock()
     else:
-        companies = _cfg(cfg.get("companies_file", "companies.yaml")).get("companies") or []
+        companies = _load_companies(cfg.get("companies_file", "companies.yaml"))
         if not companies:
             print("companies.yaml has no entries")
             return 1
@@ -115,6 +136,16 @@ def cmd_run(args) -> int:
     passed_filters = len(jobs)
     jobs = store.unseen(jobs)
     print(f"  new since last run: {len(jobs)}")
+
+    # Token guard: never screen more than this many in one run, even after a
+    # quiet stretch or a big new board dump. Newest-first so a cap keeps the
+    # freshest roles.
+    max_screen = cfg.get("max_screen")
+    if max_screen and len(jobs) > int(max_screen):
+        jobs.sort(key=lambda j: j.posted_at or "", reverse=True)
+        print(f"  capping screen at max_screen={max_screen} (was {len(jobs)})")
+        jobs = jobs[:int(max_screen)]
+
     candidates = len(jobs)
     if args.limit:
         jobs = jobs[:args.limit]
@@ -125,6 +156,12 @@ def cmd_run(args) -> int:
         path = digest_mod.write(doc, cfg.get("digest_file", "out/digest.html"))
         print(f"\nnothing new today. preview: {path}")
         return 0
+
+    # ---- 2b. hydrate JDs for the survivors that need one (SmartRecruiters,
+    # etc). Bounded to what cleared the prefilter, so it stays a handful of
+    # extra fetches, not thousands. Skipped for --mock (no network).
+    if not args.mock:
+        hydrate_descriptions(jobs)
 
     # ---- 3. screen
     scorer = "keyword" if args.scorer == "keyword" else "llm"
@@ -151,31 +188,36 @@ def cmd_run(args) -> int:
               "  Check the warnings above (bad key, rate limit, wrong model id).")
         return 1
 
-    threshold = float(cfg.get("score_threshold", 7.0))
-    top_n = int(cfg.get("max_per_digest", 5))
-    shortlist = sorted([j for j in jobs if (j.score or 0) >= threshold],
-                       key=lambda j: j.score or 0, reverse=True)[:top_n]
-    print(f"  {len(shortlist)} scored >= {threshold}")
+    # ---- 4. rank into the digest list
+    # Show up to `digest_size` roles scoring at or above `digest_min_score`,
+    # best first. This is the "50+ a day" list — no per-job drafting unless you
+    # ask for it, so screening is the only token cost.
+    min_score = float(cfg.get("digest_min_score", cfg.get("score_threshold", 6.0)))
+    digest_size = int(cfg.get("digest_size", cfg.get("max_per_digest", 50)))
+    ranked = sorted([j for j in jobs if (j.score or 0) >= min_score],
+                    key=lambda j: j.score or 0, reverse=True)
+    digest_jobs = ranked[:digest_size]
+    print(f"  {len(ranked)} scored >= {min_score}; showing {len(digest_jobs)}")
 
-    # ---- 4. draft
-    print(f"\n[4/5] drafting kits for {len(shortlist)}")
-    if not shortlist:
-        print("  nothing cleared the threshold")
-    elif scorer == "keyword" or args.no_draft:
-        print("  skipped (keyword scorer / --no-draft)")
-    else:
+    # ---- 4b. optional drafting for the very top few (off by default)
+    draft_top = 0 if scorer == "keyword" else int(args.draft_top or 0)
+    if draft_top and digest_jobs:
+        picks = digest_jobs[:draft_top]
+        print(f"\n[4/5] drafting kits for top {len(picks)}")
         try:
             provider, model = resolve("draft")
             print(f"  via {provider.name}/{model}")
-            llm.draft(shortlist, profile,
+            llm.draft(picks, profile,
                       jd_chars=int(cfg.get("draft_jd_chars", 6000)),
                       provider=provider, model=model)
         except LLMError as e:
             print(f"  ! drafting unavailable: {e}")
+    else:
+        print("\n[4/5] drafting skipped (list-only; pass --draft-top N to enable)")
 
     # ---- 5. digest
     print("\n[5/5] digest")
-    subject, doc = digest_mod.build(shortlist, scanned, candidates, store.stats())
+    subject, doc = digest_mod.build(digest_jobs, scanned, candidates, store.stats())
     path = digest_mod.write(doc, cfg.get("digest_file", "out/digest.html"))
     print(f"  wrote {path}")
 
@@ -193,7 +235,7 @@ def cmd_run(args) -> int:
     csv_path = store.export_csv(cfg.get("tracker_csv", "out/tracker.csv"))
 
     print(f"\nfunnel: {scanned} scanned -> {passed_filters} passed filters "
-          f"-> {candidates} new -> {len(shortlist)} in digest")
+          f"-> {candidates} new -> {len(digest_jobs)} in digest")
     print(f"subject: {subject}")
     print(f"tracker: {store.stats()}  ({csv_path})")
     return 0
@@ -201,7 +243,7 @@ def cmd_run(args) -> int:
 
 # ------------------------------------------------------------------- misc --
 def cmd_applied(args) -> int:
-    store = Store(_cfg(args.config).get("seen_file", "seen.json"))
+    store = open_store(_cfg(args.config))
     ok = store.mark_applied(args.job_id)
     print("marked applied" if ok else f"unknown job_id: {args.job_id}")
     return 0 if ok else 1
@@ -209,9 +251,39 @@ def cmd_applied(args) -> int:
 
 def cmd_stats(args) -> int:
     cfg = _cfg(args.config)
-    store = Store(cfg.get("seen_file", "seen.json"))
+    store = open_store(cfg)
     print(json.dumps(store.stats(), indent=2))
     print(f"csv: {store.export_csv(cfg.get('tracker_csv', 'out/tracker.csv'))}")
+    return 0
+
+
+def cmd_validate(args) -> int:
+    """Poll every board once and report which slugs are alive.
+
+    Growing companies.yaml toward 1000+ means slugs will be wrong or dead.
+    This hits each one, prints the job count, and flags the zeros — so you can
+    fix or drop them instead of quietly polling nothing. `--prune` writes the
+    live boards to a new file.
+    """
+    cfg = _cfg(args.config)
+    companies = _load_companies(cfg.get("companies_file", "companies.yaml"))
+    print(f"validating {len(companies)} boards ...\n")
+
+    live, dead = [], []
+    for c in companies:
+        got = fetch_board(c["ats"], c["slug"], c.get("name"))
+        (live if got else dead).append(c)
+        flag = f"{len(got):>4} jobs" if got else "   0  DEAD"
+        print(f"  {flag}  {c['ats']:<15} {c['slug']}")
+
+    print(f"\n{len(live)} live, {len(dead)} dead of {len(companies)}")
+    if dead:
+        print("dead: " + ", ".join(f"{c['ats']}:{c['slug']}" for c in dead))
+    if args.prune:
+        out = Path(args.prune)
+        out.write_text(yaml.safe_dump(live, sort_keys=False, allow_unicode=True),
+                       encoding="utf-8")
+        print(f"wrote {len(live)} live boards -> {out}")
     return 0
 
 
@@ -233,10 +305,19 @@ def main(argv=None) -> int:
     sr.add_argument("--scorer", choices=["llm", "keyword", "claude"], default="llm",
                     help="keyword = offline stub, needs no API key ('claude' is an "
                          "alias for 'llm', kept for older docs)")
-    sr.add_argument("--no-draft", action="store_true", help="skip the expensive stage")
+    sr.add_argument("--draft-top", type=int, default=0, metavar="N",
+                    help="also write a full application kit for the top N (default 0 = "
+                         "list only). Uses the draft-stage model; costs more tokens.")
+    sr.add_argument("--no-draft", action="store_true",
+                    help="deprecated no-op (drafting is already off by default)")
     sr.add_argument("--send", action="store_true", help="actually email the digest")
     sr.add_argument("--limit", type=int, help="cap jobs sent to the LLM (cost guard)")
     sr.set_defaults(func=cmd_run)
+
+    sv = sub.add_parser("validate", help="check which companies.yaml slugs are alive")
+    sv.add_argument("--prune", metavar="FILE",
+                    help="write only the live boards to FILE")
+    sv.set_defaults(func=cmd_validate)
 
     sa = sub.add_parser("applied", help="mark a job_id as applied")
     sa.add_argument("job_id")

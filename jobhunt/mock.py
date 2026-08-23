@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from .fetch import parse_greenhouse, parse_lever, parse_ashby, Job
+from .fetch import parse_greenhouse, parse_lever, parse_ashby, parse_smartrecruiters, Job
 
 
 def _ago(days: int) -> datetime:
@@ -33,6 +33,11 @@ def _lever(days: int) -> int:
 
 
 def _ashby(days: int) -> str:
+    return _ago(days).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _sr(days: int) -> str:
+    """SmartRecruiters releasedDate: ISO 8601 with millis and a Z."""
     return _ago(days).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
@@ -166,6 +171,53 @@ ASHBY = {
 }
 
 
+# SmartRecruiters list endpoint. Note what it does NOT carry: the JD. The list
+# gives title + location + date; the description is fetched per-posting only for
+# prefilter survivors (hydrate_descriptions), so these fixtures leave it out and
+# the mock run reflects that pre-hydration state. SMARTRECRUITERS_DETAIL below is
+# the shape hydrate would fetch — unit-tested directly, not wired into --mock
+# (which does no network).
+SMARTRECRUITERS = {
+    "globaltech": {
+        "totalFound": 2,
+        "content": [
+            # keeper: right level, Indian city via city/region/country (no
+            # fullLocation), fresh. Description is intentionally absent.
+            {"id": "743999000000001",
+             "name": "Software Engineer, Cloud Platform",
+             "company": {"name": "GlobalTech"},
+             "location": {"city": "Bengaluru", "region": "Karnataka",
+                          "country": "India"},
+             "releasedDate": _sr(2)},
+            # junk: wrong city, exercised via the fullLocation branch.
+            {"id": "743999000000002",
+             "name": "Software Engineer, Backend",
+             "company": {"name": "GlobalTech"},
+             "location": {"fullLocation": "Berlin, Germany", "remote": False},
+             "releasedDate": _sr(1)},
+        ],
+    },
+}
+
+# One posting's detail body, in SmartRecruiters' jobAd.sections shape. Used by
+# the parser unit test; hydrate_descriptions() would fetch one of these per
+# surviving job in production.
+SMARTRECRUITERS_DETAIL = {
+    "743999000000001": {
+        "jobAd": {"sections": {
+            "jobDescription": {"title": "Job Description",
+                               "text": "<p>Build and operate our multi-region "
+                                       "control plane in Go and Java.</p>"},
+            "qualifications": {"title": "Qualifications",
+                               "text": "<ul><li>1-2 years of backend experience</li>"
+                                       "<li>Solid data structures &amp; algorithms</li></ul>"},
+            "additionalInformation": {"title": "Additional Information",
+                                      "text": "<p>Hybrid, 3 days in our Bengaluru office.</p>"},
+        }},
+    },
+}
+
+
 def fetch_all_mock(companies=None) -> list[Job]:
     jobs: list[Job] = []
     for slug, body in GREENHOUSE.items():
@@ -174,5 +226,8 @@ def fetch_all_mock(companies=None) -> list[Job]:
         jobs += parse_lever(slug, slug.title(), body)
     for slug, body in ASHBY.items():
         jobs += parse_ashby(slug, slug.title(), body)
-    print(f"  [mock] {len(jobs)} postings from {len(GREENHOUSE) + len(LEVER) + len(ASHBY)} boards")
+    for slug, body in SMARTRECRUITERS.items():
+        jobs += parse_smartrecruiters(slug, slug.title(), body)
+    boards = len(GREENHOUSE) + len(LEVER) + len(ASHBY) + len(SMARTRECRUITERS)
+    print(f"  [mock] {len(jobs)} postings from {boards} boards")
     return jobs

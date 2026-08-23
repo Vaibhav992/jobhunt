@@ -135,6 +135,11 @@ the candidate plainly does not meet: security clearance, a specific degree, a
 named technology with a year count they cannot hit, or a country they cannot
 work in.
 
+Hard eligibility rule for this candidate: only roles requiring 0-2 years of
+professional experience may score 7 or higher. If the posting explicitly asks
+for more than 2 years, including a range whose upper bound exceeds 2, score it
+0-4 even when the skills match.
+
 Do not inflate scores to be encouraging. Most postings are a 4.
 
 Return ONLY a JSON array, one object per job, no prose:
