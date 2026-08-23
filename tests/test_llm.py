@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobhunt import llm, providers
 from jobhunt.fetch import Job
-from jobhunt.providers import LLMError, Provider
+from jobhunt.providers import FallbackProvider, LLMError, Provider
 
 PROFILE = {"core_skills": ["Go", "Kubernetes"], "target_titles": ["Backend Engineer"],
            "seniority": "mid", "years_experience": 3}
@@ -273,7 +273,9 @@ def test_keyword_screen_stays_in_range_with_an_empty_profile():
 
 ENV_KEYS = ["LLM_PROVIDER", "SCREEN_PROVIDER", "DRAFT_PROVIDER",
             "SCREEN_MODEL", "DRAFT_MODEL", "ANTHROPIC_API_KEY",
-            "GEMINI_API_KEY", "GROQ_API_KEY"]
+            "GEMINI_API_KEY", "GROQ_API_KEY", "DEEPSEEK_API_KEY",
+            "DEEP_SEEK_API_KEY", "FALLBACK_PROVIDER", "FALLBACK_MODEL",
+            "SCREEN_FALLBACK_PROVIDER"]
 
 
 @pytest.fixture
@@ -332,6 +334,43 @@ def test_unknown_provider_lists_the_valid_ones(clean_env):
     clean_env.setenv("LLM_PROVIDER", "gpt5-turbo-ultra")
     with pytest.raises(LLMError, match="anthropic"):
         providers.resolve("screen")
+
+
+def test_gemini_wraps_deepseek_when_both_keys_are_set(clean_env):
+    clean_env.setenv("LLM_PROVIDER", "gemini")
+    clean_env.setenv("GEMINI_API_KEY", "gem-test")
+    clean_env.setenv("DEEPSEEK_API_KEY", "sk-test")
+    provider, model = providers.resolve("screen")
+    assert isinstance(provider, FallbackProvider)
+    assert provider.name == "gemini+deepseek"
+    assert provider.fallback_model == "deepseek-chat"
+    assert model  # still the gemini screen model
+
+
+def test_gemini_stays_solo_without_a_deepseek_key(clean_env):
+    clean_env.setenv("LLM_PROVIDER", "gemini")
+    clean_env.setenv("GEMINI_API_KEY", "gem-test")
+    provider, _ = providers.resolve("screen")
+    assert provider.name == "gemini"
+    assert not isinstance(provider, FallbackProvider)
+
+
+def test_deep_seek_alias_counts_as_the_deepseek_key(clean_env):
+    clean_env.setenv("LLM_PROVIDER", "gemini")
+    clean_env.setenv("GEMINI_API_KEY", "gem-test")
+    clean_env.setenv("DEEP_SEEK_API_KEY", "sk-alias")
+    provider, _ = providers.resolve("screen")
+    assert isinstance(provider, FallbackProvider)
+
+
+def test_screen_retries_on_fallback_when_primary_raises():
+    jobs = make_jobs(1)
+    primary = StubProvider([LLMError("gemini HTTP 429")])
+    backup = StubProvider([scores_reply(jobs, score=8.0)])
+    wrapped = FallbackProvider(primary, backup, "deepseek-chat")
+    llm.screen(jobs, PROFILE, batch_size=8, provider=wrapped, model="gemini-x")
+    assert jobs[0].score == 8.0
+    assert backup.calls[0]["model"] == "deepseek-chat"
 
 
 def test_both_stages_ask_for_json_mode_and_leave_room_for_thinking():

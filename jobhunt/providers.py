@@ -218,14 +218,22 @@ class DeepSeekProvider(OpenAICompatProvider):
     """DeepSeek's /chat/completions. Cheap, and its prompt-cache makes a
     repeated profile prefix nearly free — which is exactly how screening runs.
 
-    Reads its own key (DEEPSEEK_API_KEY) and defaults to the DeepSeek base URL,
-    so it does not collide with a Groq key set for a different stage.
+    Reads DEEPSEEK_API_KEY, and also accepts DEEP_SEEK_API_KEY as an alias.
     """
 
     name = "deepseek"
     required_env = "DEEPSEEK_API_KEY"
     default_base = "https://api.deepseek.com"
     key_env = "DEEPSEEK_API_KEY"
+
+    def _env(self, key: str) -> str:
+        if key == "DEEPSEEK_API_KEY":
+            for alias in ("DEEPSEEK_API_KEY", "DEEP_SEEK_API_KEY"):
+                value = (os.environ.get(alias) or "").strip()
+                if value:
+                    return value
+            raise LLMError("DEEPSEEK_API_KEY is not set (see .env.example)")
+        return super()._env(key)
 
 
 class OllamaProvider(Provider):
@@ -280,6 +288,36 @@ DEFAULT_MODELS = {
 }
 
 
+class FallbackProvider(Provider):
+    """Try the primary provider; on LLMError retry the same prompt on fallback."""
+
+    def __init__(self, primary: Provider, fallback: Provider, fallback_model: str):
+        self.primary = primary
+        self.fallback = fallback
+        self.fallback_model = fallback_model
+        self.name = f"{primary.name}+{fallback.name}"
+
+    def complete(self, model: str, system: str, user: str, max_tokens: int,
+                 json_mode: bool = False) -> str:
+        try:
+            return self.primary.complete(model, system, user, max_tokens, json_mode)
+        except LLMError as e:
+            print(f"  ! {self.primary.name}/{model} failed ({e}) — "
+                  f"retrying via {self.fallback.name}/{self.fallback_model}")
+            return self.fallback.complete(
+                self.fallback_model, system, user, max_tokens, json_mode)
+
+    def complete_document(self, model: str, prompt: str, pdf: bytes,
+                          max_tokens: int) -> str:
+        try:
+            return self.primary.complete_document(model, prompt, pdf, max_tokens)
+        except LLMError as e:
+            print(f"  ! {self.primary.name} document call failed ({e}) — "
+                  f"retrying via {self.fallback.name}")
+            return self.fallback.complete_document(
+                self.fallback_model, prompt, pdf, max_tokens)
+
+
 def get_provider(name: str) -> Provider:
     try:
         return PROVIDERS[name]()
@@ -308,4 +346,28 @@ def resolve(stage: str, check: bool = True) -> tuple[Provider, str]:
         raise LLMError(f"set {stage.upper()}_MODEL for provider {name!r}")
     if check:
         provider.preflight()
+
+    fallback_name = (
+        os.getenv(f"{stage.upper()}_FALLBACK_PROVIDER")
+        or os.getenv("FALLBACK_PROVIDER")
+        or ""
+    ).strip().lower()
+    # Gemini is the default cheap screen; DeepSeek is the automatic backup
+    # whenever its key is present and no other fallback was named.
+    if not fallback_name and name == "gemini":
+        fallback_name = "deepseek"
+    if fallback_name and fallback_name != name:
+        try:
+            backup = get_provider(fallback_name)
+            backup_model = (
+                os.getenv(f"{stage.upper()}_FALLBACK_MODEL")
+                or os.getenv("FALLBACK_MODEL")
+                or ""
+            ).strip() or DEFAULT_MODELS.get(fallback_name, {}).get(stage)
+            if check:
+                backup.preflight()
+            if backup_model:
+                provider = FallbackProvider(provider, backup, backup_model)
+        except LLMError:
+            pass
     return provider, model

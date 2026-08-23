@@ -33,7 +33,10 @@ def _load_env(path: str = ".env") -> None:
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            key, val = k.strip(), v.strip().strip('"').strip("'")
+            os.environ.setdefault(key, val)
+            if key == "DEEP_SEEK_API_KEY":
+                os.environ.setdefault("DEEPSEEK_API_KEY", val)
 
 
 def _cfg(path: str | Path) -> dict:
