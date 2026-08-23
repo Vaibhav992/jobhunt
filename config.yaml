@@ -99,7 +99,7 @@ max_screen: 400           # token guard: never screen more than this in one run
                           # you well under this, so it rarely bites.
 
 # --- digest (the "50+ a day" ranked list) -----------------------------------
-digest_min_score: 7.0     # only mail roles the model is actually confident about
+digest_min_score: 3.0     # mail anything the model scored 3+; skip only a truly empty list
 digest_size: 60           # cap the list length so the email stays readable
 
 # --- drafting (OFF by default; opt in per run with `run --draft-top N`) ------
