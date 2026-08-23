@@ -26,7 +26,7 @@ DRAFT_KEYS = ("fit_summary", "tailored_bullets", "gaps", "cover_note", "question
 # (Gemini 2.5+, and anything with thinking on) spend output tokens before the
 # answer starts, so a ceiling sized to the visible answer gets consumed and you
 # get truncated JSON instead of a result.
-SCREEN_MAX_TOKENS = 4000
+SCREEN_MAX_TOKENS = 1200
 DRAFT_MAX_TOKENS = 8000
 PROFILE_MAX_TOKENS = 4000
 
@@ -120,37 +120,39 @@ def build_profile(resume_bytes: bytes | None = None, resume_text: str | None = N
 
 # ----------------------------------------------------------------- screen ---
 
-SCREEN_SYSTEM = """You screen job postings for one candidate. You are strict.
+SCREEN_SYSTEM = """Score jobs for one candidate. Be stingy. Most jobs are a 3.
 
-Score 0-10 on genuine fit:
-  9-10  strong match, candidate clears the bar and the role is a step up
-  7-8   good match, worth applying
-  5-6   plausible but real gaps
-  0-4   wrong seniority, wrong stack, or a hard requirement the candidate lacks
+0-10:
+  8-10  title + stack + years all fit; worth applying
+  7     close fit, one small gap
+  0-6   anything else — wrong stack, vague JD, or only a title match
 
-Seniority mismatch is the most common failure: a 3-year engineer scoring an 8
-on a Staff role is wrong. Penalise it hard, in both directions — a senior
-engineer does not want an internship either. Do the same for hard requirements
-the candidate plainly does not meet: security clearance, a specific degree, a
-named technology with a year count they cannot hit, or a country they cannot
-work in.
+Must score 0-4 if any of these is true:
+  - asks for more than 2 years (including a range whose high end is >2)
+  - internship
+  - senior / staff / lead / manager
+  - core stack is not Java, Spring, backend, or full-stack
 
-Hard eligibility rule for this candidate: only roles requiring 0-2 years of
-professional experience may score 7 or higher. Fresher, new-grad, GET, and
-junior Software Developer roles are in scope — score them on stack fit, not
-down for being entry-level. Internships still score 0-4. If the posting
-explicitly asks for more than 2 years, including a range whose upper bound
-exceeds 2, score it 0-4 even when the skills match.
+Fresher / GET / junior Software Developer is in scope if the stack fits.
+Do not boost a score to be nice. Title-only overlap is not a 7.
 
-Do not inflate scores to be encouraging. Most postings are a 4.
-
-Return ONLY a JSON array, one object per job, no prose:
+Return ONLY JSON, no prose:
 [{"job_id": str, "score": number, "reason": str}]
-Echo `job_id` back exactly as given. `reason` is one sentence, max 20 words,
-concrete about the deciding factor."""
+Echo job_id exactly. reason: max 12 words."""
 
 
-def screen(jobs: list[Job], profile: dict, batch_size: int = 8, jd_chars: int = 1400,
+def _screen_profile(profile: dict) -> dict:
+    """Send only the fields the scorer needs — long project blurbs waste tokens."""
+    return {
+        "years_experience": profile.get("years_experience"),
+        "seniority": profile.get("seniority"),
+        "target_titles": profile.get("target_titles") or [],
+        "core_skills": (profile.get("core_skills") or [])[:12],
+        "domains": profile.get("domains") or [],
+    }
+
+
+def screen(jobs: list[Job], profile: dict, batch_size: int = 8, jd_chars: int = 800,
            provider: Provider | None = None, model: str | None = None) -> list[Job]:
     """Stage 1: score every surviving job. Mutates and returns `jobs`.
 
@@ -160,7 +162,7 @@ def screen(jobs: list[Job], profile: dict, batch_size: int = 8, jd_chars: int = 
     if provider is None or model is None:
         provider, model = resolve("screen")
     batch_size = max(1, int(batch_size))
-    profile_blob = json.dumps(profile, ensure_ascii=False)
+    profile_blob = json.dumps(_screen_profile(profile), ensure_ascii=False)
 
     for start in range(0, len(jobs), batch_size):
         batch = jobs[start:start + batch_size]

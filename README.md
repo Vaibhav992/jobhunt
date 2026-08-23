@@ -128,7 +128,7 @@ filters:
   max_age_days: 30
   max_experience_years: 2
 max_screen: 400           # token guard: most jobs to screen in one run
-digest_min_score: 6.0     # list every match at or above this
+digest_min_score: 7.0     # only mail confident matches; skip empty emails
 digest_size: 60           # cap the list length
 ```
 

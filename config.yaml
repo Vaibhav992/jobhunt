@@ -91,15 +91,15 @@ filters:
   max_experience_years: 2
 
 # --- screening (the one LLM cost in list mode) ------------------------------
-screen_batch_size: 8      # jobs per screening call. Higher = cheaper, sloppier.
-screen_jd_chars: 1400     # JD truncation for screening
+screen_batch_size: 10     # jobs per screening call. Higher = cheaper.
+screen_jd_chars: 800      # short JD slice — enough to judge stack + years
 max_screen: 400           # token guard: never screen more than this in one run
                           # (newest-first). Protects against a first-run flood
                           # or a big new-board dump. The prefilter usually keeps
                           # you well under this, so it rarely bites.
 
 # --- digest (the "50+ a day" ranked list) -----------------------------------
-digest_min_score: 6.0     # list every match scoring at or above this
+digest_min_score: 7.0     # only mail roles the model is actually confident about
 digest_size: 60           # cap the list length so the email stays readable
 
 # --- drafting (OFF by default; opt in per run with `run --draft-top N`) ------

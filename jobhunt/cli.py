@@ -225,12 +225,14 @@ def cmd_run(args) -> int:
     print(f"  wrote {path}")
 
     sent = False
-    if args.send:
+    if args.send and digest_jobs:
         try:
             mailer.send(subject, doc)
             sent = True
         except Exception as e:  # bad app password, blocked port, offline
             print(f"  ! email failed ({type(e).__name__}: {e}) — digest still on disk")
+    elif args.send:
+        print("  no jobs cleared the bar — email skipped")
     else:
         print("  --send not passed, email skipped")
 

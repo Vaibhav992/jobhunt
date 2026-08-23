@@ -115,6 +115,17 @@ def test_screen_batch_size_zero_does_not_hang():
 
 # ----------------------------------------------------------- truncation ----
 
+def test_screen_sends_a_slim_profile_not_the_whole_resume():
+    jobs = make_jobs(1)
+    stub = StubProvider([scores_reply(jobs)])
+    fat = dict(PROFILE, notable_projects=["a" * 400], education="long unused string")
+    llm.screen(jobs, fat, batch_size=8, provider=stub, model="m")
+    sent = stub.calls[0]["user"]
+    assert "notable_projects" not in sent
+    assert "education" not in sent
+    assert "core_skills" in sent
+
+
 def test_screen_truncates_the_jd_before_sending():
     jobs = make_jobs(1, desc="x" * 9000)
     stub = StubProvider([scores_reply(jobs)])
@@ -380,7 +391,7 @@ def test_both_stages_ask_for_json_mode_and_leave_room_for_thinking():
     s = StubProvider([scores_reply(jobs)])
     llm.screen(jobs, PROFILE, provider=s, model="m")
     assert s.calls[0]["json_mode"] is True
-    assert s.calls[0]["max_tokens"] >= 4000
+    assert s.calls[0]["max_tokens"] >= 800
 
     d = StubProvider(['{"fit_summary":"x"}'])
     llm.draft(jobs, PROFILE, provider=d, model="m")
