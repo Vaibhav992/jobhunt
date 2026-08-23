@@ -18,9 +18,14 @@ filters:
     - '\bsde\s*-?\s*(i|1)\b'
     - 'software development engineer'
     - '\b(associate|junior|entry[- ]level)?\s*software (engineer|developer)\b'
+    - '\bsoftware developer\b'
     - '\bjava (engineer|developer)\b'
     - '\b(full[- ]stack|fullstack) (software )?(engineer|developer)\b'
     - '\b(site reliability engineer|sre|devops engineer)\b'
+    - '\b(fresher|freshers|new[- ]grad(?:uate)?|campus hire)\b.*\b(software|java|backend|full[- ]stack|sde|developer|engineer)\b'
+    - '\b(software|java|backend|full[- ]stack|sde|developer|engineer)\b.*\b(fresher|freshers|new[- ]grad(?:uate)?)\b'
+    - '\b(graduate (software )?engineer( trainee)?|get)\b'
+    - '\bsoftware trainee\b'
 
   # Anything matching these is dropped even if an include matched.
   exclude_titles:
@@ -31,7 +36,9 @@ filters:
     - '\bsenior\b'
     - '\b(director|vp|vice president|head of|chief|cto)\b'
     - '\b(manager|management)\b'
-    - '\b(intern|internship|apprentice|trainee)\b'                # too junior
+    # Internships stay out. Fresher / GET / graduate-trainee full-time roles
+    # are in scope — the candidate will tailor the resume per posting.
+    - '\b(intern|internship|apprentice)\b'
     - '\b(sales|account executive|marketing|recruit|support|success)\b'
     - '\b(frontend|front-end|ios|android|mobile|game|designer)\b' # wrong discipline
     - '\b(data scientist|machine learning scientist|research scientist)\b'

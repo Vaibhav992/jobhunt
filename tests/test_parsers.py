@@ -269,6 +269,11 @@ def test_parsers_take_decoded_json_not_a_response():
     "Backend Engineer (Go)",
     "Site Reliability Engineer",
     "SDE II",
+    "Software Developer",
+    "Fresher Software Developer",
+    "Java Developer - Fresher",
+    "Graduate Engineer Trainee",
+    "Software Trainee",
 ])
 def test_include_titles_match_real_titles(title):
     inc = FILTERS["include_titles"]
@@ -291,6 +296,7 @@ def test_bare_sde_regex_does_not_match_the_spelled_out_title():
     "Enterprise Account Executive",           # wrong function
     "Frontend Engineer, Design Systems",      # wrong discipline
     "Data Scientist, Growth",                 # wrong discipline
+    "Software Engineer Intern",               # internship, not fresher
 ])
 def test_junk_titles_are_rejected(title):
     inc, exc = FILTERS["include_titles"], FILTERS["exclude_titles"]

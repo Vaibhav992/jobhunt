@@ -2,7 +2,28 @@
   "permissions": {
     "allow": [
       "Skill(claude-api)",
-      "Skill(claude-api:*)"
+      "Skill(claude-api:*)",
+      "Bash(grep -v '^$')",
+      "Bash(curl -s --max-time 15 \"https://api.smartrecruiters.com/v1/companies/Bosch/postings?limit=1\")",
+      "Bash(curl -s --max-time 15 \"https://recruitee.recruitee.com/api/offers/\")",
+      "Bash(curl -s --max-time 15 \"https://apply.workable.com/api/v1/widget/accounts/dropbox?details=true\")",
+      "Bash(curl -s --max-time 15 -o /dev/null -w \"%{http_code}\\\\n\" \"https://api.deepseek.com\")",
+      "Bash(curl -s --max-time 15 \"https://api.smartrecruiters.com/v1/companies/BoschGroup/postings/744000145026980\")",
+      "Bash(python -c ' *)",
+      "Bash(curl -s --max-time 15 \"https://api.smartrecruiters.com/v1/companies/BoschGroup/postings?country=in&limit=1\")",
+      "Bash(python -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('totalFound:',d.get\\('totalFound'\\)\\)\")",
+      "Bash(curl -s --max-time 15 \"https://api.smartrecruiters.com/v1/companies/BoschGroup/postings?country=in&q=software%20engineer&limit=3\")",
+      "Bash(python -m pytest -q)",
+      "Bash(where python *)",
+      "Bash(python -m pip show pytest)",
+      "Bash(.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(.venv/Scripts/python.exe -c \"import flask; print\\('flask', flask.__version__\\)\")",
+      "Bash(cp -n profile.json profile.json.bak)",
+      "Bash(PROFILE_JSON='{\"role\":\"SHOULD_NOT_OVERWRITE\"}' .venv/Scripts/python.exe -c ' *)",
+      "Bash(.venv/Scripts/python.exe -m jobhunt run --help)",
+      "Bash(.venv/Scripts/python.exe -m jobhunt validate --help)",
+      "Bash(grep -vE '^\\\\s*$')",
+      "Bash(.venv/Scripts/python.exe -c \"import yaml; d=yaml.safe_load\\(open\\('companies.yaml',encoding='utf-8'\\)\\); d=d.get\\('companies',d\\) if isinstance\\(d,dict\\) else d; print\\(len\\(d\\),'boards'\\)\")"
     ]
   }
 }
