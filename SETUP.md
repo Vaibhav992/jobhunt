@@ -157,31 +157,50 @@ copy .env.example .env      # Windows
 cp .env.example .env        # macOS / Linux
 ```
 
-Open `.env` in any text editor and set:
+Open `.env` in any text editor. **Recommended: Gemini 3 + DeepSeek fallback.**
 
 ```bash
 LLM_PROVIDER=gemini
-GEMINI_API_KEY=paste-your-key-here
+SCREEN_PROVIDER=gemini
+DRAFT_PROVIDER=gemini
+GEMINI_API_KEY=paste-your-gemini-key
+SCREEN_MODEL=gemini-3.5-flash-lite
+DRAFT_MODEL=gemini-3.6-flash
+
+FALLBACK_PROVIDER=deepseek
+FALLBACK_MODEL=deepseek-chat
+DEEPSEEK_API_KEY=paste-your-deepseek-key
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASS=your-16-char-app-password
+MAIL_TO=you@gmail.com
 ```
 
-Now check which models your key can actually use — model names change often,
-and a stale name gives you a confusing 404:
+`gemini-3.5-flash-lite` screens every job (cheap). `gemini-3.6-flash` is only
+used with `run --draft-top N`. If Gemini hits quota or 429, the same call
+retries on DeepSeek (`deepseek-chat`).
+
+DeepSeek-only (no Gemini). Export the resume to `.txt` for `profile`:
+
+```bash
+LLM_PROVIDER=deepseek
+SCREEN_PROVIDER=deepseek
+DRAFT_PROVIDER=deepseek
+SCREEN_MODEL=deepseek-chat
+DRAFT_MODEL=deepseek-chat
+DEEPSEEK_API_KEY=paste-your-deepseek-key
+```
+
+Now check which Gemini models your key can actually use — names change, and a
+stale name gives a 404:
 
 ```bash
 python -c "import os,sys,requests; sys.path.insert(0,'.'); from jobhunt.cli import _load_env; _load_env(); print('\n'.join(m['name'].replace('models/','') for m in requests.get('https://generativelanguage.googleapis.com/v1beta/models', params={'key':os.environ['GEMINI_API_KEY']}).json()['models'] if 'generateContent' in m.get('supportedGenerationMethods',[])))"
 ```
 
-Pick a fast/cheap model for screening and a stronger one for drafting, and put
-them in `.env`:
-
-```bash
-SCREEN_MODEL=gemini-3.5-flash-lite
-DRAFT_MODEL=gemini-3.6-flash
-```
-
-Screening reads every surviving job, so it wants cheap. Drafting runs about five
-times a day, so it can afford quality. If a name above 404s, use one from the
-list your key printed.
+If `gemini-3.5-flash-lite` or `gemini-3.6-flash` 404s, pick names from that list.
 
 > `.env` is already in `.gitignore`. Never commit it, never paste your key into
 > a chat, a screenshot, or a video. If you do, regenerate it immediately.
@@ -343,7 +362,8 @@ for you on a schedule, for free, with your laptop closed.
    | Secret | Value |
    |---|---|
    | `PROFILE_JSON` | the entire contents of your local `profile.json`, pasted |
-   | `GEMINI_API_KEY` | your key (or `GROQ_API_KEY` / `ANTHROPIC_API_KEY`) |
+   | `GEMINI_API_KEY` | Gemini 3 key from Google AI Studio |
+   | `DEEPSEEK_API_KEY` | DeepSeek fallback key |
    | `SMTP_USER` | your Gmail address |
    | `SMTP_PASS` | your 16-character App Password |
    | `MAIL_TO` | where the digest should go |
@@ -355,6 +375,7 @@ for you on a schedule, for free, with your laptop closed.
    | `LLM_PROVIDER` | `gemini` |
    | `SCREEN_MODEL` | `gemini-3.5-flash-lite` |
    | `DRAFT_MODEL` | `gemini-3.6-flash` |
+   | `FALLBACK_PROVIDER` | `deepseek` |
 
 3. Go to the **Actions** tab and enable workflows (forks start with them off).
 

@@ -140,7 +140,7 @@ digest_size: 60           # cap the list length
 ### 3. Build your profile
 
 ```bash
-cp .env.example .env      # add DEEPSEEK_API_KEY (see "Picking providers")
+cp .env.example .env      # add GEMINI_API_KEY and DEEPSEEK_API_KEY
 python -m jobhunt profile --resume resume.pdf
 ```
 
@@ -168,38 +168,62 @@ kit (uses the draft-stage model; costs more), for the roles you're serious about
 
 ---
 
-## Picking providers
+## `.env` — Gemini 3 and DeepSeek
 
-Screening reads hundreds of jobs and wants the cheapest decent model. Drafting
-runs only when you ask (`--draft-top N`) and wants the best one. So they're
-configured separately:
+Copy [`.env.example`](.env.example) to `.env`. The recommended setup is **Gemini 3**
+for every call, with **DeepSeek** as automatic fallback if Gemini 429s or errors.
 
 ```bash
-LLM_PROVIDER=deepseek           # sets both stages
-SCREEN_PROVIDER=deepseek        # ...override per stage
-SCREEN_MODEL=deepseek-chat
-DRAFT_PROVIDER=anthropic        # only used with --draft-top
-DRAFT_MODEL=claude-sonnet-5
+LLM_PROVIDER=gemini
+SCREEN_PROVIDER=gemini
+DRAFT_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-key
+SCREEN_MODEL=gemini-3.5-flash-lite
+DRAFT_MODEL=gemini-3.6-flash
+
+FALLBACK_PROVIDER=deepseek
+FALLBACK_MODEL=deepseek-chat
+DEEPSEEK_API_KEY=your-deepseek-key
+# DEEP_SEEK_API_KEY=          # alias; also works
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASS=your-16-char-app-password
+MAIL_TO=you@gmail.com
 ```
 
-| Provider | Value | Key | PDF resumes | Notes |
-|---|---|---|---|---|
-| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | no | cheap; prompt-cache makes the repeated profile prefix nearly free — ideal for screening |
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | yes | uses the official SDK |
-| Google Gemini | `gemini` | `GEMINI_API_KEY` | yes | generous free tier |
-| Groq | `groq` | `GROQ_API_KEY` | no | very fast, free tier |
-| OpenAI-compatible | `openai-compatible` | `GROQ_API_KEY` + `LLM_BASE_URL` | no | Together, OpenRouter, vLLM |
-| Ollama | `ollama` | none | no | fully local, `OLLAMA_HOST` |
+DeepSeek-only (no Gemini). `profile` then needs a `.txt` / `.md` resume:
 
-DeepSeek is the recommended screening provider here: it reads the JD list over
-plain `requests`, and its prompt-cache means the (large, unchanging) profile
-prefix is billed once and reused across every screening batch in a run.
+```bash
+LLM_PROVIDER=deepseek
+SCREEN_PROVIDER=deepseek
+DRAFT_PROVIDER=deepseek
+SCREEN_MODEL=deepseek-chat
+DRAFT_MODEL=deepseek-chat
+DEEPSEEK_API_KEY=your-deepseek-key
+```
 
-Everything except Anthropic goes over plain `requests`, so you can delete the
-`anthropic` line from `requirements.txt` and still run the whole thing.
+| Variable | What |
+|---|---|
+| `LLM_PROVIDER` | default for both stages: `gemini` or `deepseek` |
+| `SCREEN_PROVIDER` / `DRAFT_PROVIDER` | override one stage |
+| `SCREEN_MODEL` | Gemini 3 cheap pass: `gemini-3.5-flash-lite` |
+| `DRAFT_MODEL` | Gemini 3 quality pass: `gemini-3.6-flash` |
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) |
+| `DEEPSEEK_API_KEY` | [DeepSeek platform](https://platform.deepseek.com) |
+| `FALLBACK_PROVIDER` / `FALLBACK_MODEL` | used when Gemini raises; default `deepseek` / `deepseek-chat` |
+| `SMTP_*` / `MAIL_TO` | digest email (Gmail App Password, no spaces) |
 
-Adding a provider is one class in [`jobhunt/providers.py`](jobhunt/providers.py)
-with a `complete()` method, plus an entry in the `PROVIDERS` dict.
+| Provider | Value | Key | PDF resumes |
+|---|---|---|---|
+| Google Gemini 3 | `gemini` | `GEMINI_API_KEY` | yes |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | no |
+| Groq | `groq` | `GROQ_API_KEY` | no |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | yes |
+| Ollama | `ollama` | none | no |
+
+Never commit `.env`. If a key leaked, regenerate it.
 
 ---
 
